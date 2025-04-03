@@ -4,4 +4,4 @@ description: 'Custom code for the GSB Data Index'
 package: Computed Fields
 core_version_requirement: '^8 || ^9 || ^10'
 dependencies:
-  - drupal:computed_field
+
