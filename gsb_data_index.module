@@ -1,0 +1,13 @@
+<?php
+use Drupal\Core\Entity\EntityInterface;
+function gsb_data_index_entity_presave(EntityInterface $entity) {
+  //dpm($entity->bundle());
+  if ($entity->bundle() == 'resource') {
+    //dpm($entity);
+    $is_update = ($entity->original === NULL) ? FALSE : TRUE;
+    dpm($is_update);
+    $moderation_state = $entity->get('moderation_state')->getValue()[0]['value'];
+    dpm($moderation_state);
+  }
+  return;
+}
