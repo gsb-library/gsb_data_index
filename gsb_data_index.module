@@ -1,13 +1,77 @@
 <?php
 use Drupal\Core\Entity\EntityInterface;
+use GuzzleHttp\Exception\RequestException;
+
 function gsb_data_index_entity_presave(EntityInterface $entity) {
-  //dpm($entity->bundle());
+  // Run in draft State
   if ($entity->bundle() == 'resource') {
-    //dpm($entity);
-    $is_update = ($entity->original === NULL) ? FALSE : TRUE;
-    dpm($is_update);
     $moderation_state = $entity->get('moderation_state')->getValue()[0]['value'];
-    dpm($moderation_state);
+
+    // Only run api call if we are not in the draft state.
+    if ($moderation_state !== 'draft') {
+      $attributes = array(
+        'dataset_id' => $entity->id(),
+        'dataset_name' => $entity->label(),
+        'az_id' => $entity->get('field_az_id')->value,
+        'roam_id' => $entity->get('field_roam_subscription_id')->value,
+        'redivis_id' => $entity->get('field_redivis_id')->value,
+        'darc_id' => $entity->get('field_darc_airtable_id')->value
+      );
+
+      $response = gsb_data_index_snaplogic_api_post_call('rh-dataindex/dataset-update', $attributes, 'StanfordDev');
+    }
   }
   return;
 }
+
+/**
+ * Makes a REST POST request to SnapLogic API.
+ */
+function gsb_data_index_snaplogic_api_post_call($endpoint, $data, $environment = 'StanfordDev') {
+  // Get the SnapLogic API token from config.
+  $config = \Drupal::config('gsb_data_index.settings');
+  $api_token = $config->get('snaplogic_api_token');
+
+  // Ensure the API token is available.
+  if (!$api_token) {
+    \Drupal::logger('gsb_data_index')->error('SnapLogic API token is missing.');
+    return;
+  }
+
+  // Define the endpoint URL.
+  $url = 'https://elastic.snaplogic.com/api/1/rest/slsched/feed/' . $environment . '/GSB/' . $endpoint;
+
+  // Define the headers.
+  $headers = [
+    'Authorization' => 'Bearer ' . $api_token,
+    'Content-Type' => 'application/json',
+  ];
+
+  // Convert data array to JSON.
+  $body = json_encode($data);
+
+  try {
+    // Make the POST request.
+    $response = \Drupal::httpClient()->post($url, [
+      'headers' => $headers,
+      'body' => $body,
+    ]);
+
+    // Get response status and body.
+    $status_code = $response->getStatusCode();
+    $response_body = $response->getBody()->getContents();
+
+    // Log the response.
+    \Drupal::logger('my_module')->notice('SnapLogic API Response: ' . $response_body);
+
+    return [
+      'status' => $status_code,
+      'body' => $response_body,
+    ];
+  } catch (RequestException $e) {
+    // Log errors.
+    \Drupal::logger('gsb_data_index')->error('SnapLogic API Error: ' . $e->getMessage());
+    return NULL;
+  }
+}
+

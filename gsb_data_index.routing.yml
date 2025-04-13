@@ -1,0 +1,7 @@
+gsb_data_index.settings:
+  path: '/admin/config/gsb-data-index'
+  defaults:
+    _form: '\Drupal\gsb_data_index\Form\GSBDataIndexSettingsForm'
+    _title: 'GSB Data Index Settings'
+  requirements:
+    _permission: 'administer gsb data index settings'

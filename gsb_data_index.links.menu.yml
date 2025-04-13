@@ -1,0 +1,6 @@
+gsb_data_index.admin_settings:
+  title: 'GSB Data Index Settings'
+  description: 'Configure the SnapLogic API token.'
+  route_name: gsb_data_index.settings
+  parent: system.admin_config
+  weight: 10

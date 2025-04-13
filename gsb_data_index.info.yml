@@ -3,5 +3,4 @@ type: module
 description: 'Custom code for the GSB Data Index'
 package: Computed Fields
 core_version_requirement: '^8 || ^9 || ^10'
-dependencies:
-
+configure: gsb_data_index.settings
