@@ -9,25 +9,157 @@ function gsb_data_index_entity_presave(EntityInterface $entity) {
 
     // Only run api call if we are not in the draft state.
     if ($moderation_state !== 'draft') {
-      $attributes = array(
-        'dataset_id' => $entity->id(),
-        'dataset_name' => $entity->label(),
-        'az_id' => $entity->get('field_az_id')->value,
-        'roam_id' => $entity->get('field_roam_subscription_id')->value,
-        'redivis_id' => $entity->get('field_redivis_id')->value,
-        'darc_id' => $entity->get('field_darc_airtable_id')->value
+      $fields_to_watch = array(
+        'title',
+        'field_az_id',
+        'field_roam_subscription_id',
+        'field_redivis_id',
+        'field_darc_airtable_id',
+      );
+      $changed_fields = gsb_data_index_get_changed_fields($entity);
+
+      if (array_keys_exists($fields_to_watch, $changed_fields)) {
+        $attributes = array(
+          'dataset_id' => $entity->id(),
+          'dataset_name' => $entity->label(),
+          'az_id' => $entity->get('field_az_id')->value,
+          'roam_id' => $entity->get('field_roam_subscription_id')->value,
+          'redivis_id' => $entity->get('field_redivis_id')->value,
+          'darc_id' => $entity->get('field_darc_airtable_id')->value
+        );
+
+        $response = gsb_data_index_snaplogic_api_call('POST', 'rh-dataindex/updateDataset', $attributes);
+      }
+
+      $integration_fields = array(
+        'field_az_id',
+        'field_roam_subscription_id',
+        'field_redivis_id',
+        'field_darc_airtable_id',
       );
 
-      $response = gsb_data_index_snaplogic_api_post_call('rh-dataindex/updateDataset', $attributes, 'StanfordDev');
+      if (array_keys_exists($integration_fields, $changed_fields)) {
+        $response = gsb_data_index_snaplogic_api_call('GET', 'rh-dataindex/getDatasets?dataset_index_id=' . $entity->id());
+        $results = json_decode($response['body'], true);
+        if (!empty($results)) {
+          $results = $results[0];
+
+          $entity->set('field_a_z_description', $results['a2z_abstract']);
+          $entity->set('field_a_z_internal_note', $results['a2z_internal_note']);
+          $entity->set('field_a_z_list_url', $results['a2z_url']);
+
+          $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+          $term_ids = [];
+
+          foreach (explode('|', $results['a2z_topics']) as $topic) {
+            $terms = $term_storage->loadByProperties([
+              'name' => $topic,
+              'vid' => 'topics',
+            ]);
+
+            if (!empty($terms)) {
+              $term = reset($terms);
+              $term_ids[] = $term->id();
+            }
+          }
+
+          $entity->set('field_topics', $term_ids);
+
+          $entity->set('field_redivis_current_version', $results['redivis_current_version']);
+          //$entity->set('field_redivis_methodology', $results['redivis_methodology']);
+          $entity->set('field_redivis_pub_access_level', $results['redivis_public_access_level']);
+          $entity->set('field_redivis_released_date', explode('.', $results['redivis_release_date'])[0]);
+          $entity->set('field_redivis_updated_date', explode('.', $results['redivis_version_updated_date'])[0]);
+          $entity->set('field_redivis_url', $results['redivis_url']);
+
+          $entity->set('field_roam_publisher_identifier', $results['roam_publisher_id']);
+          $entity->set('field_roam_license_id', $results['roam_license_id']);
+         dpm($results);
+        }
+      }
     }
   }
   return;
 }
 
+function gsb_data_index_get_changed_fields($entity) {
+  $changed_fields = array();
+  if ($entity->isNew()) {
+    $changed_fields['is_new'] = true;
+    foreach($entity->getFields() as $field_name => $field) {
+      $field_type = $field->getFieldDefinition()->getType();
+      $new_value = '';
+      switch ($field_type) {
+        case 'entity_reference':
+          if (!$entity->get($field_name)->isEmpty()) {
+            $new_value = (!$entity->get($field_name)->isEmpty()) ? $entity->get($field_name)->entity->label() : '';
+          }
+          break;
+
+        case 'boolean':
+          $new_value = filter_var($entity->get($field_name)->value, FILTER_VALIDATE_BOOLEAN);
+          break;
+
+        default:
+          $new_value = $entity->get($field_name)->value;
+      }
+
+      $changed_fields[$field_name] = [
+        'original' => NULL,
+        'new' => $new_value,
+        'field_type' => $field_type,
+      ];
+    }
+  }
+  else {
+    $changed_fields['is_new'] = false;
+
+    $original = $entity->original;
+
+    foreach($entity->getFields() as $field_name => $field) {
+      $field_type = $field->getFieldDefinition()->getType();
+      $original_value = '';
+      $new_value = '';
+      switch($field_type) {
+        case 'entity_reference':
+
+          if (!$original->get($field_name)->isEmpty()) {
+            $original_value = (!$original->get($field_name)->isEmpty()) ? $original->get($field_name)->entity->label() : '';
+            $new_value = (!$entity->get($field_name)->isEmpty()) ? $entity->get($field_name)->entity->label() : '';
+          }
+          break;
+
+        case 'boolean':
+          $original_value = filter_var($original->get($field_name)->value, FILTER_VALIDATE_BOOLEAN);
+          $new_value = filter_var($entity->get($field_name)->value, FILTER_VALIDATE_BOOLEAN);
+          break;
+
+        default:
+          $original_value = $original->get($field_name)->value;
+          $new_value = $entity->get($field_name)->value;
+      }
+
+      if ($original_value !== $new_value) {
+        $changed_fields[$field_name] = array(
+          'original' => $original_value,
+          'new' => $new_value,
+          'field_type' => $field_type,
+        );
+      }
+    }
+  }
+
+  return $changed_fields;
+}
+
+function array_keys_exists(array $keys, array $array) {
+  $diff = array_diff_key(array_flip($keys), $array);
+  return count($diff) !== count($keys);
+}
 /**
  * Makes a REST POST request to SnapLogic API.
  */
-function gsb_data_index_snaplogic_api_post_call($endpoint, $data) {
+function gsb_data_index_snaplogic_api_call($method, $endpoint, $data = null) {
   // Get the SnapLogic settings from config.
   $config = \Drupal::config('gsb_data_index.settings');
   $environment = $config->get('snaplogic_environment');
@@ -48,15 +180,25 @@ function gsb_data_index_snaplogic_api_post_call($endpoint, $data) {
     'Content-Type' => 'application/json',
   ];
 
-  // Convert data array to JSON.
-  $body = json_encode($data);
-
   try {
-    // Make the POST request.
-    $response = \Drupal::httpClient()->post($url, [
-      'headers' => $headers,
-      'body' => $body,
-    ]);
+    switch($method) {
+      case 'POST':
+        // Convert data array to JSON.
+        $body = json_encode($data);
+
+        // Make the POST request.
+        $response = \Drupal::httpClient()->post($url, [
+          'headers' => $headers,
+          'body' => $body,
+        ]);
+        break;
+
+      case 'GET':
+        $response = \Drupal::httpClient()->get($url, [
+          'headers' => $headers,
+        ]);
+        break;
+    }
 
     // Get response status and body.
     $status_code = $response->getStatusCode();
