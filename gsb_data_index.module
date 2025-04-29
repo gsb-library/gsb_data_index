@@ -44,9 +44,13 @@ function gsb_data_index_entity_presave(EntityInterface $entity) {
         if (!empty($results)) {
           $results = $results[0];
 
+          // A2Z Data
           $entity->set('field_a_z_description', $results['a2z_abstract']);
           $entity->set('field_a_z_internal_note', $results['a2z_internal_note']);
           $entity->set('field_a_z_list_url', $results['a2z_url']);
+          $entity->set('field_a_z_internal_note', $results['a2z_internal_note']);
+          $az_visibility = ($results['a2z_visibility']) ? 'yes' : 'no';
+          $entity->set('field_visible_in_a_z', $az_visibility);
 
           $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
           $term_ids = [];
@@ -65,16 +69,34 @@ function gsb_data_index_entity_presave(EntityInterface $entity) {
 
           $entity->set('field_topics', $term_ids);
 
+          // Redivis Data
           $entity->set('field_redivis_current_version', $results['redivis_current_version']);
-          //$entity->set('field_redivis_methodology', $results['redivis_methodology']);
+          $entity->set('field_redivis_methodology', $results['redivis_methodology']);
           $entity->set('field_redivis_pub_access_level', $results['redivis_public_access_level']);
           $entity->set('field_redivis_released_date', explode('.', $results['redivis_release_date'])[0]);
           $entity->set('field_redivis_updated_date', explode('.', $results['redivis_version_updated_date'])[0]);
           $entity->set('field_redivis_url', $results['redivis_url']);
 
+
+          $bbox_value = '';
+          if (!empty($results['redivis_geoBBox_west_longitude'])) {
+            $bbox_top = $results['redivis_geoBBox_north_latitude'];
+            $bbox_left = $results['redivis_geoBBox_west_longitude'];
+            $bbox_bottom = $results['redivis_geoBBox_south_latitude'];
+            $bbox_right = $results['redivis_geoBBox_east_longitude'];
+
+            $bbox_value = 'POLYGON((' . $bbox_right . ' ' . $bbox_top . ', ' . $bbox_right . ' ' . $bbox_bottom . ', ' . $bbox_left . ' ' . $bbox_bottom . ', ' . $bbox_left . ' ' . $bbox_top . ', ' . $bbox_right . ' ' . $bbox_top . '))';
+          }
+          $entity->set('field_bbox', $bbox_value);
+
+          // Roam Data
           $entity->set('field_roam_publisher_identifier', $results['roam_publisher_id']);
+          $entity->set('field_publisher', $results['roam_publisher_names']);
           $entity->set('field_roam_license_id', $results['roam_license_id']);
-         dpm($results);
+          $entity->set('field_license_name', $results['roam_license_name']);
+
+          // DARC Data
+          $entity->set('field_darc_notes', $results['darc_data_description']);
         }
       }
     }
