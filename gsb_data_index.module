@@ -1,6 +1,7 @@
 <?php
 use Drupal\Core\Entity\EntityInterface;
 use GuzzleHttp\Exception\RequestException;
+use Drupal\node\Entity\Node;
 
 function gsb_data_index_entity_presave(EntityInterface $entity) {
   // Run in draft State
@@ -44,64 +45,58 @@ function gsb_data_index_entity_presave(EntityInterface $entity) {
         if (!empty($results)) {
           $results = $results[0];
 
-          // A2Z Data
-          $entity->set('field_a_z_description', $results['a2z_abstract']);
-          $entity->set('field_a_z_internal_note', $results['a2z_internal_note']);
-          $entity->set('field_a_z_list_url', $results['a2z_url']);
-          $entity->set('field_a_z_internal_note', $results['a2z_internal_note']);
-          $az_visibility = ($results['a2z_visibility']) ? 'yes' : 'no';
-          $entity->set('field_visible_in_a_z', $az_visibility);
-
-          $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
-          $term_ids = [];
-
-          foreach (explode('|', $results['a2z_topics']) as $topic) {
-            $terms = $term_storage->loadByProperties([
-              'name' => $topic,
-              'vid' => 'topics',
-            ]);
-
-            if (!empty($terms)) {
-              $term = reset($terms);
-              $term_ids[] = $term->id();
-            }
-          }
-
-          $entity->set('field_topics', $term_ids);
-
-          // Redivis Data
-          $entity->set('field_redivis_current_version', $results['redivis_current_version']);
-          $entity->set('field_redivis_methodology', $results['redivis_methodology']);
-          $entity->set('field_redivis_pub_access_level', $results['redivis_public_access_level']);
-          $entity->set('field_redivis_released_date', explode('.', $results['redivis_release_date'])[0]);
-          $entity->set('field_redivis_updated_date', explode('.', $results['redivis_version_updated_date'])[0]);
-          $entity->set('field_redivis_url', $results['redivis_url']);
+          gsb_data_index_update_resource($entity, $results);
 
 
-          $bbox_value = '';
-          if (!empty($results['redivis_geoBBox_west_longitude'])) {
-            $bbox_top = $results['redivis_geoBBox_north_latitude'];
-            $bbox_left = $results['redivis_geoBBox_west_longitude'];
-            $bbox_bottom = $results['redivis_geoBBox_south_latitude'];
-            $bbox_right = $results['redivis_geoBBox_east_longitude'];
-
-            $bbox_value = 'POLYGON((' . $bbox_right . ' ' . $bbox_top . ', ' . $bbox_right . ' ' . $bbox_bottom . ', ' . $bbox_left . ' ' . $bbox_bottom . ', ' . $bbox_left . ' ' . $bbox_top . ', ' . $bbox_right . ' ' . $bbox_top . '))';
-          }
-          $entity->set('field_bbox', $bbox_value);
-
-          // Roam Data
-          $entity->set('field_roam_publisher_identifier', $results['roam_publisher_id']);
-          $entity->set('field_publisher', $results['roam_publisher_names']);
-          $entity->set('field_roam_license_id', $results['roam_license_id']);
-          $entity->set('field_license_name', $results['roam_license_name']);
-
-          // DARC Data
-          $entity->set('field_darc_notes', $results['darc_data_description']);
         }
       }
     }
   }
   return;
+}
+
+/**
+ * Implement hook_cron().
+ */
+function gsb_data_index_cron() {
+  $state = \Drupal::state();
+  $last_run = $state->get('gsb_data_index_import_dw_last_run', 0);
+  $now = \Drupal::time()->getCurrentTime();
+
+
+  // Run only if 5 minutes have passed.
+  if ($now - $last_run >= 300) {
+    // Do your task here.
+    \Drupal::logger('gsb_data_index')->notice('Update Data Warehouse Data ran at ' . date('c'));
+    $response = gsb_data_index_snaplogic_api_call('GET', 'rh-dataindex/getDatasets?updated_date=' . date('Y-m-d', $now));
+
+    if (!empty($response)) {
+      $dataset_ids = array_map(function ($item) {
+        return $item->dataset_id;
+      }, $response);
+
+      $nodes = \Drupal::entityTypeManager()
+        ->getStorage('node')
+        ->loadMultiple($dataset_ids);
+
+      foreach ($nodes as $index => $node) {
+        // Make sure it's the correct type, just in case
+        if ($node->bundle() === 'resource') {
+
+          // Update the resource with the updated data
+          gsb_data_index_update_resource($node, $response[$index]);
+
+          // Save the updated node.
+          $node->save();
+        }
+      }
+
+      \Drupal::logger('my_module')->notice('Updated @count resource nodes.', ['@count' => count($nodes)]);
+    }
+
+    // Update last run time.
+    $state->set('gsb_data_index_import_dw_last_run', $now);
+  }
 }
 
 function gsb_data_index_get_changed_fields($entity) {
@@ -238,5 +233,76 @@ function gsb_data_index_snaplogic_api_call($method, $endpoint, $data = null) {
     \Drupal::logger('gsb_data_index')->error('SnapLogic API Error: ' . $e->getMessage());
     return NULL;
   }
+}
+
+function gsb_data_index_update_resource(EntityInterface &$entity, $data) {
+  // A2Z Data
+  $entity->set('field_a_z_description', $data['a2z_abstract']);
+  $entity->set('field_a_z_internal_note', $data['a2z_internal_note']);
+  $entity->set('field_a_z_list_url', $data['a2z_url']);
+  $entity->set('field_a_z_internal_note', $data['a2z_internal_note']);
+  $az_visibility = ($data['a2z_visibility']) ? 'yes' : 'no';
+  $entity->set('field_visible_in_a_z', $az_visibility);
+
+  $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+  $term_ids = [];
+
+  foreach (explode('|', $data['a2z_topics']) as $topic) {
+    $terms = $term_storage->loadByProperties([
+      'name' => $topic,
+      'vid' => 'topics',
+    ]);
+
+    if (!empty($terms)) {
+      $term = reset($terms);
+      $term_ids[] = $term->id();
+    }
+  }
+
+  $entity->set('field_topics', $term_ids);
+
+  // Redivis Data
+  $entity->set('field_redivis_current_version', $data['redivis_current_version']);
+  $entity->set('field_redivis_methodology', $data['redivis_methodology']);
+  $entity->set('field_redivis_pub_access_level', $data['redivis_public_access_level']);
+  $entity->set('field_redivis_released_date', explode('.', $data['redivis_release_date'])[0]);
+  $entity->set('field_redivis_updated_date', explode('.', $data['redivis_version_updated_date'])[0]);
+  $entity->set('field_redivis_usage', $data['redivis_usage_markdown']);
+  $entity->set('field_redivis_url', $data['redivis_url']);
+
+
+  $bbox_value = '';
+  if (!empty($data['redivis_geoBBox_west_longitude'])) {
+    $bbox_top = $data['redivis_geoBBox_north_latitude'];
+    $bbox_left = $data['redivis_geoBBox_west_longitude'];
+    $bbox_bottom = $data['redivis_geoBBox_south_latitude'];
+    $bbox_right = $data['redivis_geoBBox_east_longitude'];
+
+    $bbox_value = 'POLYGON((' . $bbox_right . ' ' . $bbox_top . ', ' . $bbox_right . ' ' . $bbox_bottom . ', ' . $bbox_left . ' ' . $bbox_bottom . ', ' . $bbox_left . ' ' . $bbox_top . ', ' . $bbox_right . ' ' . $bbox_top . '))';
+  }
+  $entity->set('field_bbox', $bbox_value);
+
+  // Roam Data
+  $entity->set('field_roam_publisher_identifier', $data['roam_publisher_id']);
+  $entity->set('field_publisher', $data['roam_publisher_names']);
+  $entity->set('field_roam_license_id', $data['roam_license_id']);
+  $entity->set('field_license_name', $data['roam_license_name']);
+  $entity->set('field_normalized_price', $data['roam_subscription_period_normalized_price']);
+  $entity->set('field_purchase_order_reference', $data['roam_subscription_period_member_purchase_order_reference']);
+
+  $subscription_start_date = explode('T', $data['roam_subscription_period_subscription_start_date'])[0];;
+  $subscription_end_date = explode('T', $data['roam_subscription_period_subscription_end_date'])[0];;
+  $entity->set('field_subscription_period', [
+    [
+      'value' => $subscription_start_date,
+      'end_value' =>  $subscription_end_date
+    ]
+  ]);
+
+  $entity->set('field_vendor', $data['roam_vendor_name']);
+  $entity->set('field_vendor_contact_email', $data['roam_vendor_email']);
+
+  // DARC Data
+  $entity->set('field_darc_notes', $data['darc_data_description']);
 }
 
