@@ -3,54 +3,36 @@ use Drupal\Core\Entity\EntityInterface;
 use GuzzleHttp\Exception\RequestException;
 use Drupal\node\Entity\Node;
 
-function gsb_data_index_entity_presave(EntityInterface $entity) {
-  // Run in draft State
+/**
+ * Implements hook_entity_insert().
+ */
+function gsb_data_index_entity_insert(\Drupal\Core\Entity\EntityInterface $entity) {
   if ($entity->bundle() == 'resource') {
-    $moderation_state = $entity->get('moderation_state')->getValue()[0]['value'];
+    // Insert the new record into the data warehouse.
+    $attributes = array(
+      'dataset_id' => $entity->id(),
+      'dataset_name' => $entity->label(),
+      'az_id' => $entity->get('field_az_id')->value,
+      'roam_id' => $entity->get('field_roam_subscription_id')->value,
+      'redivis_id' => $entity->get('field_redivis_id')->value,
+      'darc_id' => $entity->get('field_darc_airtable_id')->value
+    );
+    $response = gsb_data_index_snaplogic_api_call('POST', 'rh-dataindex/updateDataset', $attributes);
 
-    // Only run api call if we are not in the draft state.
-    if ($moderation_state !== 'draft') {
-      $fields_to_watch = array(
-        'title',
-        'field_az_id',
-        'field_roam_subscription_id',
-        'field_redivis_id',
-        'field_darc_airtable_id',
-      );
-      $changed_fields = gsb_data_index_get_changed_fields($entity);
-
-      if (array_keys_exists($fields_to_watch, $changed_fields)) {
-        $attributes = array(
-          'dataset_id' => $entity->id(),
-          'dataset_name' => $entity->label(),
-          'az_id' => $entity->get('field_az_id')->value,
-          'roam_id' => $entity->get('field_roam_subscription_id')->value,
-          'redivis_id' => $entity->get('field_redivis_id')->value,
-          'darc_id' => $entity->get('field_darc_airtable_id')->value
-        );
-
-        $response = gsb_data_index_snaplogic_api_call('POST', 'rh-dataindex/updateDataset', $attributes);
-      }
-
-      $integration_fields = array(
-        'field_az_id',
-        'field_roam_subscription_id',
-        'field_redivis_id',
-        'field_darc_airtable_id',
-      );
-
-      if (array_keys_exists($integration_fields, $changed_fields)) {
-        $response = gsb_data_index_snaplogic_api_call('GET', 'rh-dataindex/getDatasets?dataset_index_id=' . $entity->id());
-        $results = json_decode($response['body'], true);
-        if (!empty($results)) {
-          $results = $results[0];
-
-          gsb_data_index_update_resource($entity, $results);
-
-
-        }
-      }
+    // Pull the full record from the data warehouse.
+    $response = gsb_data_index_snaplogic_api_call('GET', 'rh-dataindex/getDatasets?dataset_index_id=' . $entity->id());
+    $results = json_decode($response['body'], true);
+    if (!empty($results)) {
+      // Update the entity with the new values and save.
+      gsb_data_index_update_resource($entity, $results[0]);
+      $entity->save();
     }
+  }
+  return;
+}
+function gsb_data_index_entity_presave(EntityInterface $entity) {
+  if ($entity->bundle() == 'resource' && !$entity->isNew()) {
+    gsb_data_index_update_dw_records($entity);
   }
   return;
 }
@@ -96,6 +78,51 @@ function gsb_data_index_cron() {
 
     // Update last run time.
     $state->set('gsb_data_index_import_dw_last_run', $now);
+  }
+}
+
+function gsb_data_index_update_dw_records($entity) {
+
+  $fields_to_watch = array(
+    'title',
+    'field_az_id',
+    'field_roam_subscription_id',
+    'field_redivis_id',
+    'field_darc_airtable_id',
+  );
+
+  // Get list of changed fields.
+  $changed_fields = gsb_data_index_get_changed_fields($entity);
+
+  // If a changed field is in one that we want to watch then update the data warehouse.
+  if (array_keys_exists($fields_to_watch, $changed_fields)) {
+    $attributes = array(
+      'dataset_id' => $entity->id(),
+      'dataset_name' => $entity->label(),
+      'az_id' => $entity->get('field_az_id')->value,
+      'roam_id' => $entity->get('field_roam_subscription_id')->value,
+      'redivis_id' => $entity->get('field_redivis_id')->value,
+      'darc_id' => $entity->get('field_darc_airtable_id')->value
+    );
+
+    $response = gsb_data_index_snaplogic_api_call('POST', 'rh-dataindex/updateDataset', $attributes);
+  }
+
+  $integration_fields = array(
+    'field_az_id',
+    'field_roam_subscription_id',
+    'field_redivis_id',
+    'field_darc_airtable_id',
+  );
+
+  // If the changed field is one of the integration ids then pull the new data.
+  if (array_keys_exists($integration_fields, $changed_fields)) {
+    $response = gsb_data_index_snaplogic_api_call('GET', 'rh-dataindex/getDatasets?dataset_index_id=' . $entity->id());
+    $results = json_decode($response['body'], true);
+    if (!empty($results)) {
+      $results = $results[0];
+      gsb_data_index_update_resource($entity, $results);
+    }
   }
 }
 
@@ -247,26 +274,28 @@ function gsb_data_index_update_resource(EntityInterface &$entity, $data) {
   $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
   $term_ids = [];
 
-  foreach (explode('|', $data['a2z_topics']) as $topic) {
-    $terms = $term_storage->loadByProperties([
-      'name' => $topic,
-      'vid' => 'topics',
-    ]);
+  if (!is_null($data['a2z_topics'])) {
+    foreach (explode('|', $data['a2z_topics']) as $topic) {
+      $terms = $term_storage->loadByProperties([
+        'name' => $topic,
+        'vid' => 'topics',
+      ]);
 
-    if (!empty($terms)) {
-      $term = reset($terms);
-      $term_ids[] = $term->id();
+      if (!empty($terms)) {
+        $term = reset($terms);
+        $term_ids[] = $term->id();
+      }
     }
-  }
 
-  $entity->set('field_topics', $term_ids);
+    $entity->set('field_topics', $term_ids);
+  }
 
   // Redivis Data
   $entity->set('field_redivis_current_version', $data['redivis_current_version']);
   $entity->set('field_redivis_methodology', $data['redivis_methodology']);
   $entity->set('field_redivis_pub_access_level', $data['redivis_public_access_level']);
-  $entity->set('field_redivis_released_date', explode('.', $data['redivis_release_date'])[0]);
-  $entity->set('field_redivis_updated_date', explode('.', $data['redivis_version_updated_date'])[0]);
+  $entity->set('field_redivis_released_date', (!is_null($data['redivis_release_date']) ? explode('.', $data['redivis_release_date'])[0] : ''));
+  $entity->set('field_redivis_updated_date', (!is_null($data['redivis_version_updated_date']) ? explode('.', $data['redivis_version_updated_date'])[0] : ''));
   $entity->set('field_redivis_usage', $data['redivis_usage_markdown']);
   $entity->set('field_redivis_url', $data['redivis_url']);
 
@@ -290,8 +319,8 @@ function gsb_data_index_update_resource(EntityInterface &$entity, $data) {
   $entity->set('field_normalized_price', $data['roam_subscription_period_normalized_price']);
   $entity->set('field_purchase_order_reference', $data['roam_subscription_period_member_purchase_order_reference']);
 
-  $subscription_start_date = explode('T', $data['roam_subscription_period_subscription_start_date'])[0];;
-  $subscription_end_date = explode('T', $data['roam_subscription_period_subscription_end_date'])[0];;
+  $subscription_start_date = (!is_null($data['roam_subscription_period_subscription_start_date'])) ? explode('T', $data['roam_subscription_period_subscription_start_date'])[0] : '';;
+  $subscription_end_date = (!is_null($data['roam_subscription_period_subscription_end_date'])) ? explode('T', $data['roam_subscription_period_subscription_end_date'])[0] : '';;
   $entity->set('field_subscription_period', [
     [
       'value' => $subscription_start_date,
