@@ -45,35 +45,44 @@ function gsb_data_index_cron() {
   $last_run = $state->get('gsb_data_index_import_dw_last_run', 0);
   $now = \Drupal::time()->getCurrentTime();
 
-
   // Run only if 5 minutes have passed.
   if ($now - $last_run >= 300) {
-    // Do your task here.
+    // Get last updated records
     \Drupal::logger('gsb_data_index')->notice('Update Data Warehouse Data ran at ' . date('c'));
-    $response = gsb_data_index_snaplogic_api_call('GET', 'rh-dataindex/getDatasets?updated_date=' . date('Y-m-d', $now));
+    $response = gsb_data_index_snaplogic_api_call('GET', 'rh-dataindex/getDatasets?updated_date=' . date('Y-m-d', $last_run));
 
-    if (!empty($response)) {
-      $dataset_ids = array_map(function ($item) {
-        return $item->dataset_id;
-      }, $response);
+    // If we have records to update.
+    if ($response['status'] == 200 && !empty($response['body'])) {
+      $body = json_decode($response['body'], true);
 
+      // Get the datasets that need updating.
+      $datasets_to_update = array_reduce($body, function($result, $item) {
+        $result[$item['dataset_id']] = $item;
+        return $result;
+      }, []);
+
+      // Get an array of the IDs that need updating.
+      $dataset_ids = array_keys($datasets_to_update);
+
+      // Get all nodes that match those ids.
       $nodes = \Drupal::entityTypeManager()
         ->getStorage('node')
         ->loadMultiple($dataset_ids);
 
+      // Update the node with the new values.
       foreach ($nodes as $index => $node) {
         // Make sure it's the correct type, just in case
         if ($node->bundle() === 'resource') {
 
           // Update the resource with the updated data
-          gsb_data_index_update_resource($node, $response[$index]);
+          gsb_data_index_update_resource($node, $datasets_to_update[$index]);
 
           // Save the updated node.
           $node->save();
         }
       }
 
-      \Drupal::logger('my_module')->notice('Updated @count resource nodes.', ['@count' => count($nodes)]);
+      \Drupal::logger('gsb_data_index')->notice('Updated @count resource nodes. NIDs: {nids}', ['@count' => count($nodes), 'nids' => json_encode(array_keys($nodes))]);
     }
 
     // Update last run time.
@@ -249,7 +258,7 @@ function gsb_data_index_snaplogic_api_call($method, $endpoint, $data = null) {
     $response_body = $response->getBody()->getContents();
 
     // Log the response.
-    \Drupal::logger('my_module')->notice('SnapLogic API Response: ' . $response_body);
+    \Drupal::logger('gsb_data_index')->notice('SnapLogic API Response: {api_response}', ['api_response' => json_encode($response_body)]);
 
     return [
       'status' => $status_code,
