@@ -1,0 +1,5 @@
+services:
+  gsb_data_index.feeds_presave_subscriber:
+    class: Drupal\gsb_data_index\EventSubscriber\FeedsPresaveSubscriber
+    tags:
+      - { name: event_subscriber }

@@ -2,8 +2,6 @@
 use Drupal\Core\Entity\EntityInterface;
 use GuzzleHttp\Exception\RequestException;
 use Drupal\node\Entity\Node;
-use Drupal\feeds\Feeds\Item\ItemInterface;
-use Drupal\feeds\Feeds\Importer\ImporterInterface;
 
 /**
  * Implements hook_entity_insert().
@@ -345,52 +343,3 @@ function gsb_data_index_update_resource(EntityInterface &$entity, $data) {
   // DARC Data
   $entity->set('field_darc_notes', $data['darc_data_description']);
 }
-
-/**
- * Implements hook_feeds_presave().
- */
-function gsb_data_index_feeds_presave(ImporterInterface $importer, EntityInterface $entity, ItemInterface $item) {
-  \Drupal::logger('gsb_data_index')->notice('hook_feeds_presave called for importer: @importer', [
-    '@importer' => $importer->id(),
-  ]);
-  // Only act on the specific Feeds importer.
-  if ($importer->id() !== 'import_datasets') {
-    return;
-  }
-
-  // Confirm we're working with a resource node.
-  if ($entity instanceof Node && $entity->bundle() === 'resource') {
-    $abstract = $item->get('Abstract');
-
-    if (!empty($abstract)) {
-      // Create the version entity
-      $version_entity = \Drupal::entityTypeManager()
-        ->getStorage('versions')
-        ->create([
-          'type' => 'version',
-          'field_v_abstract' => $abstract,
-        ]);
-      $version_entity->save();
-
-      \Drupal::logger('gsb_data_index')->notice('Created version entity with ID @id and abstract "@abs"', [
-        '@id' => $version_entity->id(),
-        '@abs' => $abstract,
-      ]);
-
-      // Append to field_versions
-      $entity->get('field_versions')->appendItem([
-        'target_id' => $version_entity->id(),
-      ]);
-
-      \Drupal::logger('mymodule')->notice('Appended version ID @id to resource node.', [
-        '@id' => $version_entity->id(),
-      ]);
-    } else {
-      \Drupal::logger('mymodule')->warning('No abstract found for resource node @title.', [
-        '@title' => $entity->label(),
-      ]);
-    }
-  }
-  die('here');
-}
-
