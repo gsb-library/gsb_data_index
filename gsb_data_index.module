@@ -273,8 +273,14 @@ function gsb_data_index_snaplogic_api_call($method, $endpoint, $data = null) {
 
 function gsb_data_index_update_resource(EntityInterface &$entity, $data) {
   // A2Z Data
-  $entity->set('field_a_z_description', $data['a2z_abstract']);
-  $entity->set('field_a_z_internal_note', $data['a2z_internal_note']);
+  $entity->set('field_a_z_description', [
+      'value' => $data['a2z_abstract'],
+      'format' => 'full_html',
+  ]);
+  $entity->set('field_a_z_internal_note', [
+      'value' => $data['a2z_internal_note'],
+      'format' => 'full_html',
+  ]);
   $entity->set('field_a_z_list_url', $data['a2z_url']);
   $entity->set('field_a_z_internal_note', $data['a2z_internal_note']);
   $az_visibility = ($data['a2z_visibility']) ? 'yes' : 'no';
@@ -301,11 +307,17 @@ function gsb_data_index_update_resource(EntityInterface &$entity, $data) {
 
   // Redivis Data
   $entity->set('field_redivis_current_version', $data['redivis_current_version']);
-  $entity->set('field_redivis_methodology', $data['redivis_methodology']);
+  $entity->set('field_redivis_methodology', [
+      'value' => $data['redivis_methodology'],
+      'format' => 'full_html',
+  ]);
   $entity->set('field_redivis_pub_access_level', $data['redivis_public_access_level']);
   $entity->set('field_redivis_released_date', (!is_null($data['redivis_release_date']) ? explode('.', $data['redivis_release_date'])[0] : ''));
   $entity->set('field_redivis_updated_date', (!is_null($data['redivis_version_updated_date']) ? explode('.', $data['redivis_version_updated_date'])[0] : ''));
-  $entity->set('field_redivis_usage', $data['redivis_usage_markdown']);
+  $entity->set('field_redivis_usage', [
+      'value' => $data['redivis_usage_markdown'],
+      'format' => 'full_html',
+  ]);
   $entity->set('field_redivis_url', $data['redivis_url']);
 
 
@@ -341,5 +353,8 @@ function gsb_data_index_update_resource(EntityInterface &$entity, $data) {
   $entity->set('field_vendor_contact_email', $data['roam_vendor_email']);
 
   // DARC Data
-  $entity->set('field_darc_notes', $data['darc_data_description']);
+  $entity->set('field_darc_notes', [
+      'value' => $data['darc_data_description'],
+      'format' => 'full_html',
+  ]);
 }
