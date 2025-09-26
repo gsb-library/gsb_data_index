@@ -283,7 +283,7 @@ function gsb_data_index_update_resource(EntityInterface &$entity, $data) {
   ]);
   $entity->set('field_a_z_list_url', $data['a2z_url']);
   $entity->set('field_a_z_internal_note', $data['a2z_internal_note']);
-  $az_visibility = ($data['a2z_visibility']) ? 'yes' : 'no';
+  $az_visibility = ($data['a2z_visibility']) ? 'no' : 'yes';
   $entity->set('field_visible_in_a_z', $az_visibility);
 
   $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
