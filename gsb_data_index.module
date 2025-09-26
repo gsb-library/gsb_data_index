@@ -19,8 +19,19 @@ function gsb_data_index_entity_insert(\Drupal\Core\Entity\EntityInterface $entit
     );
     $response = gsb_data_index_snaplogic_api_call('POST', 'rh-dataindex/updateDataset', $attributes);
 
+    if ($response['status'] !== 200) {
+      \Drupal::logger('gsb_data_index')->notice('{status} Error Inserting Data into Data Warehouse: {error}', ['@status' => $response['status'], '@error' => $response['body']]);
+      return;
+    }
+
     // Pull the full record from the data warehouse.
     $response = gsb_data_index_snaplogic_api_call('GET', 'rh-dataindex/getDatasets?dataset_index_id=' . $entity->id());
+
+    if ($response['status'] !== 200) {
+      \Drupal::logger('gsb_data_index')->notice('{status} Error Getting Data from Data Warehouse for {entityID}: {error}', ['@status' => $response['status'], '@entityID' => $entity->id(), '@error' => $response['body']]);
+      return;
+    }
+
     $results = json_decode($response['body'], true);
     if (!empty($results)) {
       // Update the entity with the new values and save.
@@ -50,6 +61,11 @@ function gsb_data_index_cron() {
     // Get last updated records
     \Drupal::logger('gsb_data_index')->notice('Update Data Warehouse Data ran at ' . date('c'));
     $response = gsb_data_index_snaplogic_api_call('GET', 'rh-dataindex/getDatasets?updated_date=' . date('Y-m-d', $last_run));
+
+    if ($response['status'] !== 200) {
+      \Drupal::logger('gsb_data_index')->notice('{status} Error Getting Data from Data Warehouse from date {date}: {error}', ['@status' => $response['status'], '@date' => date('Y-m-d', $last_run), '@error' => $response['body']]);
+      return;
+    }
 
     // If we have records to update.
     if ($response['status'] == 200 && !empty($response['body'])) {
@@ -115,6 +131,11 @@ function gsb_data_index_update_dw_records($entity) {
     );
 
     $response = gsb_data_index_snaplogic_api_call('POST', 'rh-dataindex/updateDataset', $attributes);
+
+    if ($response['status'] !== 200) {
+      \Drupal::logger('gsb_data_index')->notice('{status} Error Updating Data to Data Warehouse for {entityID}: {error}', ['@status' => $response['status'], '@entityID' => $entity->id(), '@error' => $response['body']]);
+      return;
+    }
   }
 
   $integration_fields = array(
@@ -127,6 +148,11 @@ function gsb_data_index_update_dw_records($entity) {
   // If the changed field is one of the integration ids then pull the new data.
   if (array_keys_exists($integration_fields, $changed_fields)) {
     $response = gsb_data_index_snaplogic_api_call('GET', 'rh-dataindex/getDatasets?dataset_index_id=' . $entity->id());
+
+    if ($response['status'] !== 200) {
+      \Drupal::logger('gsb_data_index')->notice('{status} Error Getting Data from Data Warehouse for {entityID}: {error}', ['@status' => $response['status'], '@entityID' => $entity->id(), '@error' => $response['body']]);
+      return;
+    }
     $results = json_decode($response['body'], true);
     if (!empty($results)) {
       $results = $results[0];
@@ -221,7 +247,18 @@ function gsb_data_index_snaplogic_api_call($method, $endpoint, $data = null) {
   // Ensure the API token is available.
   if (!$api_token) {
     \Drupal::logger('gsb_data_index')->error('SnapLogic API token is missing.');
-    return;
+    return [
+      'status' => 500,
+      'body' => "SnapLogic API token is missing.",
+    ];
+  }
+
+  if ($environment === "Disabled") {
+    \Drupal::logger('gsb_data_index')->error('SnapLogic API is disabled.');
+    return [
+      'status' => 500,
+      'body' => "SnapLogic API is disabled.",
+    ];
   }
 
   // Define the endpoint URL.
@@ -267,7 +304,10 @@ function gsb_data_index_snaplogic_api_call($method, $endpoint, $data = null) {
   } catch (RequestException $e) {
     // Log errors.
     \Drupal::logger('gsb_data_index')->error('SnapLogic API Error: ' . $e->getMessage());
-    return NULL;
+    return  [
+      'status' => "500",
+      'body' => $e->getMessage(),
+    ];
   }
 }
 
@@ -355,6 +395,6 @@ function gsb_data_index_update_resource(EntityInterface &$entity, $data) {
   // DARC Data
   $entity->set('field_darc_notes', [
       'value' => $data['darc_data_description'],
-      'format' => 'full_html',
+      'format' => 'markdown',
   ]);
 }

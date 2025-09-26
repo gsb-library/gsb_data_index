@@ -31,6 +31,7 @@ class GSBDataIndexSettingsForm extends ConfigFormBase {
       '#title' => $this->t('SnapLogic Environment'),
       '#description' => $this->t('The environment to use for SnapLogic.'),
       '#options' => [
+        'Disabled' => 'Disable',
         'StanfordDev' => 'Development',
         'StanfordUAT' => 'UAT',
         'StanfordProd' => 'Production',
