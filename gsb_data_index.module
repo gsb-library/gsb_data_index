@@ -106,7 +106,7 @@ function gsb_data_index_cron() {
   }
 }
 
-function gsb_data_index_update_dw_records($entity) {
+function gsb_data_index_update_dw_records($entity, $changed = true) {
 
   $fields_to_watch = array(
     'title',
@@ -117,7 +117,12 @@ function gsb_data_index_update_dw_records($entity) {
   );
 
   // Get list of changed fields.
-  $changed_fields = gsb_data_index_get_changed_fields($entity);
+  if ($changed) {
+    $changed_fields = gsb_data_index_get_changed_fields($entity);
+  }
+  else {
+    $changed_fields = array_flip($fields_to_watch);
+  }
 
   // If a changed field is in one that we want to watch then update the data warehouse.
   if (array_keys_exists($fields_to_watch, $changed_fields)) {
