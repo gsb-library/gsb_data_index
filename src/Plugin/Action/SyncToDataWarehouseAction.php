@@ -2,62 +2,49 @@
 
 namespace Drupal\gsb_data_index\Plugin\Action;
 
-use Drupal\node\Entity\Node;
-use Drupal\views_bulk_operations\Action\ViewsBulkOperationsActionBase;
+use Drupal\Core\Action\ActionBase;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\Core\StringTranslation\StringTranslationTrait;
-use Drupal\Core\Entity\ContentEntityInterface;
+use Drupal\node\NodeInterface;
 
 /**
- * GSB Data Index Sync To Data Warehouse Action.
+ * Sync node to Data Warehouse.
  *
  * @Action(
- *   id = "gsb_data_index_sync_to_data_warehouse_action",
- *   label = @Translation("Sync To data warehouse"),
- *   type = "node"
+ *   id = "gsb_data_index_sync_to_data_warehouse_node_action",
+ *   label = @Translation("Sync to data warehouse"),
+ *   type = "node",
+ *   confirm = TRUE,
  * )
  */
-
-class SyncToDataWarehouseAction extends ViewsBulkOperationsActionBase {
-
-  use StringTranslationTrait;
+class SyncToDataWarehouseAction extends ActionBase {
 
   /**
    * {@inheritdoc}
    */
-  public function execute(ContentEntityInterface $entity = NULL) {
+  public function execute($entity = NULL) {
+    if ($entity instanceof NodeInterface) {
+      if ($entity->bundle() === 'resource') {
+        // Call your custom sync function.
+        gsb_data_index_update_dw_records($entity, FALSE);
 
-    if ($entity->bundle() == 'resource') {
-      gsb_data_index_update_dw_records($entity, false);
-
-      return $this->t(':title has been synced to the data warehouse.',
-        [
-          ':title' => $entity->getTitle(),
-        ]
-      );
+        \Drupal::messenger()->addMessage($this->t('@title has been synced to the data warehouse.', [
+          '@title' => $entity->label(),
+        ]));
+      }
+      else {
+        \Drupal::messenger()->addWarning($this->t('@title is not a resource.', [
+          '@title' => $entity->label(),
+        ]));
+      }
     }
-    else {
-      return $this->t(':title is not a resource.',
-        [
-          ':title' => $entity->getTitle(),
-        ]
-      );
-    }
-
   }
 
   /**
    * {@inheritdoc}
    */
   public function access($object, AccountInterface $account = NULL, $return_as_object = FALSE) {
-    return TRUE;
-    if ($object instanceof Node) {
-      $can_update = $object->access('update', $account, TRUE);
-      $can_edit = $object->access('edit', $account, TRUE);
-
-      return $can_edit->andIf($can_update)->isAllowed();
-    }
-
-    return FALSE;
+    // Allow users with update access on the node to run this action.
+    return $object->access('update', $account, $return_as_object);
   }
+
 }

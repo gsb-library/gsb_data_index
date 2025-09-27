@@ -1,0 +1,44 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the gsb_data_index module.
+ */
+
+/**
+ * Create the Sync to Data Warehouse node bulk action.
+ */
+function gsb_data_index_update_9001() {
+  $storage = \Drupal::entityTypeManager()->getStorage('action');
+
+  $action_id = 'gsb_data_index_sync_to_data_warehouse_node_action_config';
+  if (!$storage->load($action_id)) {
+    $action = $storage->create([
+      'id' => $action_id,
+      'label' => 'Sync to data warehouse',
+      'type' => 'node',
+      'plugin' => 'gsb_data_index_sync_to_data_warehouse_node_action',
+      'configuration' => [],
+      'status' => TRUE,
+    ]);
+    $action->save();
+
+    \Drupal::logger('gsb_data_index')->notice('Created node bulk action: Sync to data warehouse.');
+  }
+  else {
+    \Drupal::logger('gsb_data_index')->notice('Node bulk action already exists: Sync to data warehouse.');
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function gsb_data_index_uninstall() {
+  $storage = \Drupal::entityTypeManager()->getStorage('action');
+  $action_id = 'gsb_data_index_sync_to_data_warehouse_node_action_config';
+
+  if ($action = $storage->load($action_id)) {
+    $action->delete();
+    \Drupal::logger('gsb_data_index')->notice('Deleted node bulk action: Sync to data warehouse.');
+  }
+}
