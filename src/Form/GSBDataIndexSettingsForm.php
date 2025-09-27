@@ -36,7 +36,7 @@ class GSBDataIndexSettingsForm extends ConfigFormBase {
         'StanfordUAT' => 'UAT',
         'StanfordProd' => 'Production',
       ],
-      '#default_value' => $config->get('snaplogic_environment'),
+      '#default_value' => ($config->get('snaplogic_environment')) ? $config->get('snaplogic_environment') : 'Disabled',
       '#required' => FALSE,
     ];
 
