@@ -19,7 +19,7 @@ use Drupal\Core\StringTranslation\StringTranslationTrait;
  * Requires link module.
  */
 #[ComputedField(
-  id: 'roam_link',
+  id: 'computed_link',
   label: new TranslatableMarkup('Computed link'),
   field_type: 'link',
 )]
