@@ -47,10 +47,26 @@ class ComputedLink extends ComputedFieldBase implements PluginFormInterface, Con
       }
     }
 
-    return [
-      'uri' => $this->t($this->configuration['url_field'], $field_values),
-      'title' => $this->t($this->configuration['link_text_field'], $field_values),
-    ];
+    // Only return the link if all tokens were replaced.
+    $original_url = $this->configuration['url_field'];
+    $url_has_token = stristr($original_url, '@');
+    $original_title = $this->configuration['link_text_field'];
+    $title_has_token = stristr($original_title, '@');
+    $new_url = $this->t($original_url, $field_values);
+    $new_title = $this->t($original_title, $field_values);
+
+    $returnValue = [];
+    if (
+      (!$url_has_token || ($url_has_token && $new_url != $original_url)) &&
+      (!$title_has_token || ($title_has_token && $new_title != $original_title))
+    ) {
+      $returnValue = [
+        'uri' => $new_url,
+        'title' => $new_title,
+      ];
+    }
+
+    return $returnValue;
   }
 
   /**
