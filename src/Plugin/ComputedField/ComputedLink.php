@@ -12,6 +12,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Plugin\PluginFormInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\Component\Render\FormattableMarkup;
 
 /**
  * Computed field which outputs a link.
@@ -42,7 +43,7 @@ class ComputedLink extends ComputedFieldBase implements PluginFormInterface, Con
         $field = $host_entity->get($field_name);
         if (!$field->isEmpty()) {
           // Get the raw value (assuming single-value fields).
-          $field_values["@" . $field_name] = $field->value;
+          $field_values["@" . $field_name] = new FormattableMarkup($field->value, []);
         }
       }
     }
