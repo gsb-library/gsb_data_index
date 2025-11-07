@@ -1,7 +1,11 @@
 <?php
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Form\FormStateInterface;
 use GuzzleHttp\Exception\RequestException;
-use Drupal\node\Entity\Node;
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Session\AccountInterface;
 
 /**
  * Implements hook_entity_insert().
@@ -41,6 +45,10 @@ function gsb_data_index_entity_insert(\Drupal\Core\Entity\EntityInterface $entit
   }
   return;
 }
+
+/**
+ * Implements hook_entity_presave().
+ */
 function gsb_data_index_entity_presave(EntityInterface $entity) {
   if ($entity->bundle() == 'resource' && !$entity->isNew()) {
     gsb_data_index_update_dw_records($entity);
@@ -104,6 +112,79 @@ function gsb_data_index_cron() {
     // Update last run time.
     $state->set('gsb_data_index_import_dw_last_run', $now);
   }
+}
+
+/**
+ * Implements hook_form_computed_field_edit_form_alter().
+ */
+function gsb_data_index_form_computed_field_edit_form_alter(&$form, FormStateInterface $form_state, $form_id): void
+{
+  $roles = \Drupal::entityTypeManager()
+    ->getStorage('user_role')
+    ->loadMultiple();
+  $options = [];
+  foreach ($roles as $rid => $role) {
+    $options[$rid] = $role->label();
+  }
+  $field = $form_state->getFormObject()->getEntity();
+
+  $form['allowed_roles'] = [
+    '#type' => 'checkboxes',
+    '#title' => t('Roles allowed to view this computed field'),
+    '#options' => $options,
+    '#default_value' => $field->getThirdPartySetting('gsb_data_index', 'allowed_roles', []),
+    '#description' => t('Only these roles will see this computed field. Leave empty for all roles.'),
+    '#weight' => 99,
+  ];
+
+  // Add a custom submit handler
+  $form['actions']['submit']['#submit'][] = 'gsb_data_index_computed_field_edit_form_submit';
+}
+
+/**
+ * Custom submit handler for computed field config form.
+ */
+function gsb_data_index_computed_field_edit_form_submit($form, FormStateInterface $form_state): void
+{
+  /** @var \Drupal\field\FieldConfigInterface $field */
+  $field = $form_state->getFormObject()->getEntity();
+
+  // Save the custom setting as third-party settings
+  $field->setThirdPartySetting('gsb_data_index', 'allowed_roles', $form_state->getValue('allowed_roles'));
+  $field->save();
+}
+
+/**
+ * Implements hook_entity_field_access().
+ */
+function gsb_data_index_entity_field_access($operation, FieldDefinitionInterface $field_definition, AccountInterface $account, FieldItemListInterface $items = NULL) {
+  // Only check on 'view' operation for node detail pages
+  if ($operation !== 'view') {
+    return AccessResult::neutral();
+  }
+
+  // Only apply to field configs (not base fields)
+  if (!$field_definition instanceof \Drupal\field\FieldConfigInterface) {
+    return AccessResult::neutral();
+  }
+
+  // Get the allowed roles from third-party settings
+  $allowed_roles = $field_definition->getThirdPartySetting('gsb_data_index', 'allowed_roles', []);
+
+  // If no roles are set, allow access (neutral)
+  if (empty($allowed_roles)) {
+    return AccessResult::neutral();
+  }
+
+  // Check if user has any of the allowed roles
+  $user_roles = $account->getRoles();
+  $has_access = !empty(array_intersect($allowed_roles, $user_roles));
+
+  if ($has_access) {
+    return AccessResult::allowed()->cachePerUser();
+  }
+
+  return AccessResult::forbidden()->cachePerUser();
 }
 
 function gsb_data_index_update_dw_records($entity, $changed = true) {
