@@ -50,8 +50,14 @@ function gsb_data_index_entity_insert(\Drupal\Core\Entity\EntityInterface $entit
  * Implements hook_entity_presave().
  */
 function gsb_data_index_entity_presave(EntityInterface $entity) {
-  if ($entity->bundle() == 'resource' && !$entity->isNew()) {
-    gsb_data_index_update_dw_records($entity);
+  if ($entity->bundle() == 'resource') {
+
+    if (!$entity->isNew()) {
+      gsb_data_index_update_dw_records($entity);
+    }
+
+    $review_count = $entity->get('field_reviewed_by_dag')->value + $entity->get('field_reviewed_by_library')->value + $entity->get('field_reviewed_by_darc')->value;
+    $entity->set('field_reviewed_count', $review_count);
   }
   return;
 }
