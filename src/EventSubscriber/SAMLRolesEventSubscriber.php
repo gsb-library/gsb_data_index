@@ -65,21 +65,27 @@ class SAMLRolesEventSubscriber implements EventSubscriberInterface {
   }
 
   /**
-   * Assigns/unassigns roles as needed during user sync.
+   * Puts Stanford faculty in their correct role.
    *
    * @param \Drupal\samlauth\Event\SamlauthUserSyncEvent $event
    *   The event being dispatched.
    */
   public function onUserSync(SamlauthUserSyncEvent $event) {
-
-    /** @var \Drupal\user\Entity\Role[] $valid_roles */
-    $valid_roles = $this->entityTypeManager->getStorage('user_role')->loadMultiple();
-    unset($valid_roles[UserInterface::ANONYMOUS_ROLE]);
-    unset($valid_roles[UserInterface::AUTHENTICATED_ROLE]);
     $account = $event->getAccount();
+    $roles = $account->getRoles();
     $attributes = $event->getAttributes();
+    $this->logger->debug('Current User Rolew: @roles', ['@roles' => serialize($roles)]);
+    $this->logger->debug('SAML user sync: attributes: @attributes', ['@attributes' => serialize($attributes)]);
 
-    $this->logger->debug('Valid roles: @roles', ['@roles' => implode(', ', array_keys($valid_roles))]);
-    $this->logger->debug('SAML user sync: attributes: @attributes', ['@attributes' => implode(', ', $attributes)]);
+    if (in_array("faculty", $attributes['eduPersonAffiliation']) && !in_array('stanford_faculty', $roles)) {
+      $account->addRole("stanford_faculty");
+      $this->logger->debug('Add Stanford Faculty Role');
+      $event->markAccountChanged();
+    }
+    else if(!in_array("faculty", $attributes['eduPersonAffiliation']) && in_array('stanford_faculty', $roles)) {
+      $account->removeRole('stanford_faculty');
+      $this->logger->debug('Remove Stanford Faculty Role');
+      $event->markAccountChanged();
+    }
   }
 }
