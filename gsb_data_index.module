@@ -121,6 +121,107 @@ function gsb_data_index_cron() {
 }
 
 /**
+ * Implements hook_form_alter().
+ */
+function gsb_data_index_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Adjust 'node_data_use_agreement_form' to match your actual form ID
+  // For edit form, it would be 'node_data_use_agreement_edit_form'
+  if ($form_id == 'node_data_use_agreement_form' || $form_id == 'node_data_use_agreement_edit_form') {
+    dpm('Yup this is the form');
+
+
+    // Adjust 'field_resource' to your actual field name
+    if (isset($form['field_resource'])) {
+      $form['field_resource']['widget']['#ajax'] = [
+        'callback' => 'gsb_data_index_resource_ajax_callback',
+        'wrapper' => 'data-use-agreement-wrapper',
+        'event' => 'change',
+      ];
+
+      // Create a container for the agreement text
+      $form['agreement_text_display'] = [
+        '#type' => 'container',
+        '#attributes' => ['id' => 'data-use-agreement-wrapper'],
+        '#weight' => $form['field_resource']['#weight'] + 1,
+      ];
+
+      // Get the selected resource and display the text
+      $selected_resource = $form_state->getValue('field_resource');
+
+      if (!empty($selected_resource[0]['target_id'])) {
+        $resource_id = $selected_resource[0]['target_id'];
+        $agreement_text = gsb_data_index_get_agreement_text($resource_id);
+
+        if ($agreement_text) {
+          $form['agreement_text_display']['text'] = [
+            '#type' => 'markup',
+            '#markup' => '<div class="data-use-agreement"><strong>Data Access Agreement:</strong><div class="agreement-content">' . $agreement_text . '</div></div>',
+          ];
+        }
+      }
+    }
+  }
+}
+
+/**
+ * AJAX callback for resource field.
+ */
+function gsb_data_index_resource_ajax_callback(array &$form, FormStateInterface $form_state) {
+  return $form['agreement_text_display'];
+}
+
+/**
+ * Helper function to get agreement text from resource node.
+ */
+function gsb_data_index_get_agreement_text($resource_id) {
+  $node = \Drupal::entityTypeManager()->getStorage('node')->load($resource_id);
+
+  if ($node && $node->hasField('field_data_use_agreement_text')) {
+    // If it's a formatted text field with a format, get both value and format:
+    return [
+      'value' => $node->get('field_data_use_agreement_text')->value,
+      'format' => $node->get('field_data_use_agreement_text')->format,
+    ];
+  }
+
+  return NULL;
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for node entities.
+ */
+function gsb_data_index_node_presave(EntityInterface $node) {
+  // Only act on Data Use Agreement content type
+  if ($node->bundle() != 'data_use_agreement') {
+    return;
+  }
+
+  // Only on new nodes (first save), not updates
+  if (!$node->isNew()) {
+    return;
+  }
+
+  // Check if the Resource field has a value
+  if ($node->hasField('field_resource') && !$node->get('field_resource')->isEmpty()) {
+    $resource_id = $node->get('field_resource')->target_id;
+
+    // Load the referenced Resource node
+    $resource_node = \Drupal::entityTypeManager()->getStorage('node')->load($resource_id);
+
+    if ($resource_node && $resource_node->hasField('field_data_use_agreement_text')) {
+      // Get the agreement text from the Resource
+      if (!$resource_node->get('field_data_use_agreement_text')->isEmpty()) {
+        // If your fields are formatted text (with text format), use this instead:
+        $node->set('field_data_use_agreement', [
+          'value' => $resource_node->get('field_data_use_agreement_text')->value,
+          'format' => $resource_node->get('field_data_use_agreement_text')->format,
+        ]);
+      }
+    }
+  }
+}
+
+/**
  * Implements hook_form_computed_field_edit_form_alter().
  */
 function gsb_data_index_form_computed_field_edit_form_alter(&$form, FormStateInterface $form_state, $form_id): void
