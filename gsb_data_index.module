@@ -295,8 +295,8 @@ function gsb_data_index_get_changed_fields($entity) {
         case 'entity_reference':
 
           if (!$original->get($field_name)->isEmpty()) {
-            $original_value = (!$original->get($field_name)->isEmpty()) ? $original->get($field_name)->entity->label() : '';
-            $new_value = (!$entity->get($field_name)->isEmpty()) ? $entity->get($field_name)->entity->label() : '';
+            $original_value = (!$original->get($field_name)->isEmpty() && !is_null($original->get($field_name)->entity)) ? $original->get($field_name)->entity->label() : '';
+            $new_value = (!$entity->get($field_name)->isEmpty() && !is_null($entity->get($field_name)->entity)) ? $entity->get($field_name)->entity->label() : '';
           }
           break;
 
