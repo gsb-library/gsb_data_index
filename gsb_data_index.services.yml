@@ -1,4 +1,7 @@
 services:
+  gsb_data_index.algolia_secured_key_generator:
+    class: Drupal\gsb_data_index\AlgoliaSecuredKeyGenerator
+    arguments: [ '@config.factory' ]
   gsb_data_index.feeds_presave_subscriber:
     class: Drupal\gsb_data_index\EventSubscriber\FeedsPresaveSubscriber
     tags:

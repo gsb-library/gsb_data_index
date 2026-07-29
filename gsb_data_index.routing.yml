@@ -5,3 +5,12 @@ gsb_data_index.settings:
     _title: 'GSB Data Index Settings'
   requirements:
     _permission: 'administer gsb data index settings'
+
+gsb_data_index.algolia_secured_key:
+  path: '/api/algolia/secured-key'
+  defaults:
+    _controller: '\Drupal\gsb_data_index\Controller\AlgoliaSecuredKeyController::getKey'
+  requirements:
+    _permission: 'access content'
+  options:
+    no_cache: TRUE

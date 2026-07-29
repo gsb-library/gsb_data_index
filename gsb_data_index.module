@@ -193,6 +193,54 @@ function gsb_data_index_entity_field_access($operation, FieldDefinitionInterface
   return AccessResult::forbidden()->cachePerUser();
 }
 
+/**
+ * Determines which field names on a bundle an account is allowed to view.
+ *
+ * Reuses the same 'allowed_roles' third-party setting checked in
+ * gsb_data_index_entity_field_access(), so field-level visibility stays
+ * defined in exactly one place. Used to build the `attributesToRetrieve`
+ * / `restrictSearchableAttributes` restrictions on an Algolia secured API
+ * key (see AlgoliaSecuredKeyGenerator), so that a field hidden from a role
+ * in Drupal is also hidden from that role in search results.
+ *
+ * @param \Drupal\Core\Session\AccountInterface $account
+ *   The account to check.
+ * @param string $entity_type_id
+ *   The entity type, e.g. 'node'.
+ * @param string $bundle
+ *   The bundle, e.g. 'resource'.
+ *
+ * @return string[]
+ *   Machine names of the fields the account may view.
+ */
+function gsb_data_index_get_visible_field_names(\Drupal\Core\Session\AccountInterface $account, string $entity_type_id = 'node', string $bundle = 'resource'): array {
+  $visible = [];
+
+  $definitions = \Drupal::service('entity_field.manager')
+    ->getFieldDefinitions($entity_type_id, $bundle);
+
+  foreach ($definitions as $field_name => $definition) {
+    // Base fields (title, status, etc.) aren't restricted by this
+    // mechanism, which only attaches third-party settings to field
+    // configs; always treat them as visible.
+    if (!$definition instanceof \Drupal\field\FieldConfigInterface) {
+      $visible[] = $field_name;
+      continue;
+    }
+
+    $allowed_roles = $definition->getThirdPartySetting('gsb_data_index', 'allowed_roles', []);
+    // The checkboxes form element stores unchecked options as 0/FALSE;
+    // strip those out before intersecting.
+    $allowed_roles = array_keys(array_filter($allowed_roles));
+
+    if (empty($allowed_roles) || array_intersect($allowed_roles, $account->getRoles())) {
+      $visible[] = $field_name;
+    }
+  }
+
+  return $visible;
+}
+
 function gsb_data_index_update_dw_records($entity, $changed = true) {
 
   $fields_to_watch = array(
