@@ -1,11 +1,18 @@
 <?php
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\ContentEntityInterface;
+use Drupal\node\NodeInterface;
 use Drupal\Core\Form\FormStateInterface;
 use GuzzleHttp\Exception\RequestException;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
+
+const A2Z_ID_FIELD = 'field_az_id';
+const A2Z_DESCRIPTION_FIELD = 'field_a_z_description';
+const A2Z_VERSIONS_FIELD = 'field_versions';
+const A2Z_ABSTRACT_FIELD = 'field_v_abstract';
 
 /**
  * Implements hook_entity_insert().
@@ -60,6 +67,61 @@ function gsb_data_index_entity_presave(EntityInterface $entity) {
     $entity->set('field_reviewed_count', $review_count);
   }
   return;
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_update() for node entities.
+ */
+function gsb_data_index_node_update(NodeInterface $node) {
+  foreach ([A2Z_ID_FIELD, A2Z_DESCRIPTION_FIELD, A2Z_VERSIONS_FIELD] as $field) {
+    if (!$node->hasField($field)) {
+      return;
+    }
+  }
+
+  // Only act when the node has an a2z_id.
+  if ($node->get(A2Z_ID_FIELD)->isEmpty()) {
+    return;
+  }
+
+  // In Drupal 10 the pre-save state of the entity is in $node->original.
+  if (empty($node->original)) {
+    return;
+  }
+  $original = $node->original;
+
+  $new_value = $node->get(A2Z_DESCRIPTION_FIELD)->value;
+  $new_format = $node->get(A2Z_DESCRIPTION_FIELD)->format;
+  $old_value = $original->get(A2Z_DESCRIPTION_FIELD)->value;
+  $old_format = $original->get(A2Z_DESCRIPTION_FIELD)->format;
+
+  if ($new_value === $old_value && $new_format === $old_format) {
+    return;
+  }
+
+  $version = _gsb_data_index_get_latest_version($node);
+  if (!$version || !$version->hasField(A2Z_ABSTRACT_FIELD)) {
+    return;
+  }
+
+  // Skip if the abstract already matches (also prevents save loops).
+  if ($version->get(A2Z_ABSTRACT_FIELD)->value === $new_value) {
+    return;
+  }
+
+  // Include the text format only if abstract is a formatted text field.
+  $abstract_type = $version->getFieldDefinition(A2Z_ABSTRACT_FIELD)->getType();
+  if (in_array($abstract_type, ['text_long', 'text_with_summary', 'text'], TRUE)) {
+    $version->set(A2Z_ABSTRACT_FIELD, [
+      'value' => $new_value,
+      'format' => $new_format,
+    ]);
+  }
+  else {
+    $version->set(A2Z_ABSTRACT_FIELD, $new_value);
+  }
+
+  $version->save();
 }
 
 /**
@@ -537,4 +599,32 @@ function gsb_data_index_update_resource(EntityInterface &$entity, $data) {
       'value' => $data['darc_data_description'],
       'format' => 'markdown',
   ]);
+}
+
+/**
+ * Returns the most recently created version entity referenced by the node.
+ *
+ * Uses the "created" field if the version entity has one, otherwise falls
+ * back to the highest entity ID.
+ */
+function _gsb_data_index_get_latest_version(NodeInterface $node): ?ContentEntityInterface {
+  $versions = $node->get(A2Z_VERSIONS_FIELD)->referencedEntities();
+  if (empty($versions)) {
+    return NULL;
+  }
+
+  usort($versions, function (ContentEntityInterface $a, ContentEntityInterface $b) {
+    if ($a->hasField('created') && $b->hasField('created')) {
+      $diff = (int) $b->get('created')->value <=> (int) $a->get('created')->value;
+      if ($diff !== 0) {
+        return $diff;
+      }
+    }
+    return (int) $b->id() <=> (int) $a->id();
+  });
+
+  return reset($versions);
+
+  // Alternative: treat the last item in the field as "latest" instead:
+  // return end($versions) ?: NULL;
 }
